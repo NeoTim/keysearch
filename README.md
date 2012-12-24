@@ -1,7 +1,9 @@
 keysearch
 =========
 
-Search an Android RAM dump for Linux dm-crypt (incl. LUKS/cryptsetup) keys.  95% based on [Torbjörn Pettersson's code](http://events.ccc.de/camp/2007/Fahrplan/attachments/1300-Cryptokey_forensics_A.pdf).
+Search an Linux RAM dump for Linux dm-crypt (incl. LUKS/cryptsetup) keys. 95% based on [Torbjörn Pettersson's code](http://events.ccc.de/camp/2007/Fahrplan/attachments/1300-Cryptokey_forensics_A.pdf) and written by Joey Hewitt.
+
+Tested to work on CentOS 6.0 system with 2.6.32-71.el6.i686 kernel.
 
 Very much a hackjob, not guaranteed to work reliably across multiple versions or host platforms, etc.  I was happy with the [LiME module](http://code.google.com/p/lime-forensics/) for acquiring the RAM image.
 

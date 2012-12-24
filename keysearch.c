@@ -9,6 +9,9 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 
+#define CRYPTO_MAX_ALG_NAME             64
+
+/* CentOS linux-2.6.32-71.29.1.el6 */
 struct crypt_config
 {
    struct dm_dev *dev;
@@ -21,10 +24,6 @@ struct crypt_config
    void *io_queue;
    void *crypt_queue;
 
-   /* crypto related data */
-   char *cipher;
-   char *cipher_mode;
-
    struct crypt_iv_operations *iv_gen_ops;
    union {
        struct {
@@ -36,11 +35,18 @@ struct crypt_config
            int shift;
        } benbi;
    } iv_gen_private;
-   void *iv_offset;
+#ifdef CONFIG_LBDAF
+   unsigned long long iv_offset;
+#else
+   unsigned long iv_offset;
+#endif
    unsigned int iv_size;
 
    unsigned int dmreq_start;
    void *req;
+
+   char cipher[CRYPTO_MAX_ALG_NAME];
+   char chainmode[CRYPTO_MAX_ALG_NAME];
 
    struct crypto_tfm *tfm;
    unsigned long flags;
@@ -58,7 +64,7 @@ int keysearch(char *mem, int size)
         cr = (struct crypt_config *) mem;
 
         if(
-           //(void *) cr->dev            > (void *) 0xc0000000 &&
+           // (void *) cr->dev            > (void *) 0xc0000000 &&
            (void *) cr->start          > (void *) 0xc0000000 &&
            (void *) cr->io_pool        > (void *) 0xc0000000 &&
            (void *) cr->req_pool       > (void *) 0xc0000000 &&
@@ -66,18 +72,13 @@ int keysearch(char *mem, int size)
            (void *) cr->bs             > (void *) 0xc0000000 &&
            (void *) cr->io_queue       > (void *) 0xc0000000 &&
            (void *) cr->crypt_queue    > (void *) 0xc0000000 &&
-           (void *) cr->cipher         > (void *) 0xc0000000 &&
-           (void *) cr->cipher_mode    > (void *) 0xc0000000 &&
-           ((void *) cr->iv_gen_private.essiv.tfm < (void *) 0xc0000000
-             || ((void *) cr->iv_gen_private.essiv.hash_tfm > (void *) 0xc0000000 &&
-                 (void *) cr->iv_gen_private.essiv.salt     > (void *) 0xc0000000)) &&
+           (void *) cr->iv_gen_private.essiv.tfm > (void *) 0xc0000000 &&
+           (void *) cr->iv_gen_private.essiv.hash_tfm > (void *) 0xc0000000 &&
            cr->iv_offset == 0 &&
            (cr->iv_size  == 16 || cr->iv_size  == 32) &&
            (void *) cr->req            > (void *) 0xc0000000 &&
            (void *) cr->tfm            > (void *) 0xc0000000 &&
-           (cr->key_size == 16 || cr->key_size == 32 || cr->key_size == 64)
-           )
-          {
+           (cr->key_size == 16 || cr->key_size == 32 || cr->key_size == 64)) {
              if(cr->start > 0)
                printf("offset: %lu blocks\n",
                       (unsigned long int ) cr->start);
