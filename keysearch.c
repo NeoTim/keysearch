@@ -1,5 +1,7 @@
 /* © Torbjörn Pettersson 2007*/
 
+#define _GNU_SOURCE
+
 #define __KERNEL__ /* Only needed to enable some kernel-related defines */
 
 #include <stdio.h>
@@ -8,12 +10,20 @@
 #include <sys/types.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <string.h>
+#include <linux/types.h>
+
+#ifdef CONFIG_LBDAF
+   typedef unsigned long long sector_t;
+#else
+   typedef unsigned long sector_t;
+#endif
 
 /* Vanilla Linux Kernel 3.7 */
 struct crypt_config
 {
    struct dm_dev *dev;
-   void *start;
+   sector_t start;
    void *io_pool;
    void *req_pool;
    void *page_pool;
@@ -36,20 +46,22 @@ struct crypt_config
            int shift;
        } benbi;
    } iv_gen_private;
-   void *iv_offset;
+   sector_t iv_offset;
    unsigned int iv_size;
 
-   void *cpu;
+   char WTF[4];
+   void *cpu; /* this field is specially aligned */
+
    void *iv_private;
    void *tfmsptr;
-   unsigned tfms_count;
 
+   unsigned tfms_count;
    unsigned int dmreq_start;
    unsigned long flags;
    unsigned int key_size;
    unsigned int key_parts;
    unsigned char key[0];
-} __attribute__ ((packed));
+};
 
 int keysearch(char *mem, int size)
 {
@@ -60,32 +72,40 @@ int keysearch(char *mem, int size)
      {
         cr = (struct crypt_config *) mem;
 
-        if(
-           //(void *) cr->dev            > (void *) 0xc0000000 &&
-           (void *) cr->start          > (void *) 0xc0000000 &&
-           (void *) cr->io_pool        > (void *) 0xc0000000 &&
-           (void *) cr->req_pool       > (void *) 0xc0000000 &&
-           (void *) cr->page_pool      > (void *) 0xc0000000 &&
-           (void *) cr->bs             > (void *) 0xc0000000 &&
-           (void *) cr->io_queue       > (void *) 0xc0000000 &&
-           (void *) cr->crypt_queue    > (void *) 0xc0000000 &&
-           (void *) cr->cipher         > (void *) 0xc0000000 &&
-           (void *) cr->cipher_mode    > (void *) 0xc0000000 &&
-           ((void *) cr->iv_gen_private.essiv.hash_tfm > (void *) 0xc0000000) &&
-           //(void *) cr->iv_gen_private.essiv.salt     > (void *) 0xc0000000) &&
+        if((void *) cr->dev            > (void *) 0xffff800000000000 &&
+           (void *) cr->io_pool        > (void *) 0xffff800000000000 &&
+           (void *) cr->req_pool       > (void *) 0xffff800000000000 &&
+           (void *) cr->page_pool      > (void *) 0xffff800000000000 &&
+           (void *) cr->bs             > (void *) 0xffff800000000000 &&
+           (void *) cr->io_queue       > (void *) 0xffff800000000000 &&
+           (void *) cr->crypt_queue    > (void *) 0xffff800000000000 &&
+           (void *) cr->cipher         > (void *) 0xffff800000000000 &&
+           (void *) cr->cipher_mode    > (void *) 0xffff800000000000 &&
+           (void *) cr->iv_gen_private.essiv.hash_tfm > (void *) 0xffff800000000000 &&
            cr->iv_offset == 0 &&
            (cr->iv_size  == 16 || cr->iv_size  == 32) &&
            (cr->key_size == 16 || cr->key_size == 32 || cr->key_size == 64)) {
              if(cr->start > 0)
                printf("offset: %lu blocks\n",
                       (unsigned long int ) cr->start);
-             printf("keylength: %d\n",
-                    (cr->key_size * 8));
+             printf("iv_size : %d\n", cr->iv_size);
+             printf("keylength: %d\n",(cr->key_size * 8));
+             printf("keyparts: %d\n", cr->key_parts);
              printf("key: ");
              for(j = 0; j < cr->key_size; j++)
                printf("%02X",cr->key[j]);
              printf("\n");
-          }
+             /* printf("flags : %d\n", cr->flags);
+             printf("start : %p\n", cr->start);
+             printf("start : %d\n", cr->dmreq_start);
+             printf("count : %d\n", cr->tfms_count);
+             printf("%p\n", cr->tfmsptr);
+             printf("private %p\n", cr->iv_private);
+             printf("cpu %p\n", cr->cpu);
+             printf("dev %p\n", cr->dev);
+             printf("genops %p\n", cr->iv_gen_ops);
+             printf("%p\n", cr->cipher); */
+       }
      }
    return(0);
 }
