@@ -81,8 +81,8 @@ int keysearch(char *mem, int size)
            (void *) cr->crypt_queue    > (void *) 0xffff800000000000 &&
            (void *) cr->cipher         > (void *) 0xffff800000000000 &&
            (void *) cr->cipher_mode    > (void *) 0xffff800000000000 &&
-           (void *) cr->iv_gen_private.essiv.hash_tfm > (void *) 0xffff800000000000 &&
-           cr->iv_offset == 0 &&
+           // (void *) cr->iv_gen_private.essiv.hash_tfm > (void *) 0xffff800000000000 &&
+           (cr->iv_offset == 0 || cr->iv_offset % 8 == 0) &&
            (cr->iv_size  == 16 || cr->iv_size  == 32) &&
            (cr->key_size == 16 || cr->key_size == 32 || cr->key_size == 64)) {
              if(cr->start > 0)
