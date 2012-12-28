@@ -1,7 +1,5 @@
 /* © Torbjörn Pettersson 2007*/
 
-#define _GNU_SOURCE
-
 #define __KERNEL__ /* Only needed to enable some kernel-related defines */
 
 #include <stdio.h>
@@ -10,20 +8,12 @@
 #include <sys/types.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
-#include <string.h>
-#include <linux/types.h>
 
-#ifdef CONFIG_LBDAF
-   typedef unsigned long long sector_t;
-#else
-   typedef unsigned long sector_t;
-#endif
-
-/* Vanilla Linux Kernel 3.7 */
+#ifndef ARCH64
 struct crypt_config
 {
    struct dm_dev *dev;
-   sector_t start;
+   void *start;
    void *io_pool;
    void *req_pool;
    void *page_pool;
@@ -46,44 +36,101 @@ struct crypt_config
            int shift;
        } benbi;
    } iv_gen_private;
-   sector_t iv_offset;
+   void *iv_offset;
    unsigned int iv_size;
 
-   char WTF[4];
-   void *cpu; /* this field is specially aligned */
-
+   void *cpu;
    void *iv_private;
    void *tfmsptr;
-
    unsigned tfms_count;
+
+   unsigned int dmreq_start;
+   unsigned long flags;
+   unsigned int key_size;
+   unsigned int key_parts;
+   unsigned char key[0];
+} __attribute__ ((packed));
+
+#else
+
+struct crypt_config
+{
+   struct dm_dev *dev;
+   void *start;
+   void *io_pool;
+   void *req_pool;
+   void *page_pool;
+   void *bs;
+
+   void *io_queue;
+   void *crypt_queue;
+
+   /* crypto related data */
+   char *cipher;
+   char *cipher_mode;
+
+   struct crypt_iv_operations *iv_gen_ops;
+   union {
+       struct {
+           void *hash_tfm;
+           unsigned char *salt;
+       } essiv;
+       struct {
+           int shift;
+       } benbi;
+   } iv_gen_private;
+   void *iv_offset;
+   unsigned int iv_size;
+
+   void *cpu;
+   void *iv_private;
+   void *tfmsptr;
+   unsigned tfms_count;
+
    unsigned int dmreq_start;
    unsigned long flags;
    unsigned int key_size;
    unsigned int key_parts;
    unsigned char key[0];
 };
+#endif
+
+#ifdef ARCH64
+void *kas = (void *) 0xffff800000000000;
+#else
+void *kas = (void *) 0xc0000000;
+#endif
+
 
 int keysearch(char *mem, int size)
 {
    int i,j;
    struct crypt_config *cr;
-
    for(i = 0; i < (size - sizeof(struct crypt_config)); i++,mem++)
      {
         cr = (struct crypt_config *) mem;
-
-        if((void *) cr->dev            > (void *) 0xffff800000000000 &&
-           (void *) cr->io_pool        > (void *) 0xffff800000000000 &&
-           (void *) cr->req_pool       > (void *) 0xffff800000000000 &&
-           (void *) cr->page_pool      > (void *) 0xffff800000000000 &&
-           (void *) cr->bs             > (void *) 0xffff800000000000 &&
-           (void *) cr->io_queue       > (void *) 0xffff800000000000 &&
-           (void *) cr->crypt_queue    > (void *) 0xffff800000000000 &&
-           (void *) cr->cipher         > (void *) 0xffff800000000000 &&
-           (void *) cr->cipher_mode    > (void *) 0xffff800000000000 &&
-           // (void *) cr->iv_gen_private.essiv.hash_tfm > (void *) 0xffff800000000000 &&
-           (cr->iv_offset == 0 || cr->iv_offset % 8 == 0) &&
+#ifdef ARCH64
+        unsigned long long iv_offset = (unsigned long long)cr->iv_offset;
+#else
+        unsigned long iv_offset = (unsigned long)cr->iv_offset;
+#endif
+        if(
+           ((void *) cr->dev > kas || (void *) cr->dev == NULL) &&
+           //(void *) cr->start          > kas && /* check fails for 64-bit 3.7 kernels */
+           (void *) cr->io_pool        > kas &&
+           (void *) cr->req_pool       > kas &&
+           (void *) cr->page_pool      > kas &&
+           (void *) cr->bs             > kas &&
+           (void *) cr->io_queue       > kas &&
+           (void *) cr->crypt_queue    > kas &&
+           (void *) cr->cipher         > kas &&
+           (void *) cr->cipher_mode    > kas &&
+           //((void *) cr->iv_gen_private.essiv.hash_tfm > kas)  && /* fails on 64-bit? */
+           //(void *) cr->iv_gen_private.essiv.salt     > kas &&
+           (iv_offset == 0 || (iv_offset % 8 == 0)) &&
            (cr->iv_size  == 16 || cr->iv_size  == 32) &&
+           (cr->tfms_count == 1) && // || is_power_of_2(cc->tfms_count) &&
+           (cr->key_parts < 65 && cr->key_parts >= 1) && /* reduces false positives */
            (cr->key_size == 16 || cr->key_size == 32 || cr->key_size == 64)) {
              if(cr->start > 0)
                printf("offset: %lu blocks\n",
@@ -91,20 +138,22 @@ int keysearch(char *mem, int size)
              printf("iv_size : %d\n", cr->iv_size);
              printf("keylength: %d\n",(cr->key_size * 8));
              printf("keyparts: %d\n", cr->key_parts);
+             printf("flags : %ld\n", cr->flags);
              printf("key: ");
              for(j = 0; j < cr->key_size; j++)
                printf("%02X",cr->key[j]);
              printf("\n");
              /* printf("flags : %d\n", cr->flags);
              printf("start : %p\n", cr->start);
-             printf("start : %d\n", cr->dmreq_start);
+             printf("dmreq_start : %d\n", cr->dmreq_start);
              printf("count : %d\n", cr->tfms_count);
-             printf("%p\n", cr->tfmsptr);
+             printf("count : %d\n", cr->iv_offset);
+             printf("tfmsptr %p\n", cr->tfmsptr);
              printf("private %p\n", cr->iv_private);
              printf("cpu %p\n", cr->cpu);
              printf("dev %p\n", cr->dev);
              printf("genops %p\n", cr->iv_gen_ops);
-             printf("%p\n", cr->cipher); */
+             printf("cipher %p\n", cr->cipher); */
        }
      }
    return(0);
